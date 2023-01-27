@@ -1,6 +1,6 @@
 # PHP-HDBSCAN
 
-A HDBSCAN implementation written in PHP. Builds loosely on top of the Rubix ML library. Implements a dual-tree kNN for core distance estimation and a dual-tree Borůvka for building the minimum spanning tree. Designed primarily for use with the Recognize -app for Nextcloud. 
+A HDBSCAN implementation written in PHP. Builds loosely on top of the Rubix ML library (which is needed as a dependency). Implements a dual-tree kNN for core distance estimation and a dual-tree Borůvka for building the minimum spanning tree. Designed primarily for use with the Recognize -app for Nextcloud. 
 
 The code is extremely rough around the edges, sorry about that!
 
