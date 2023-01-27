@@ -2,7 +2,6 @@
 
 namespace OCA\Recognize\Service;
 
-use Rubix\ML\Estimator;
 use Rubix\ML\EstimatorType;
 use Rubix\ML\Helpers\Params;
 use Rubix\ML\Datasets\Dataset;
@@ -18,7 +17,6 @@ use Rubix\ML\Helpers\Stats;
 use Rubix\ML\Exceptions\RuntimeException;
 
 use function Rubix\ML\argmax;
-
 
 use function count;
 use function array_unique;
@@ -157,7 +155,7 @@ class HDBSCAN //implements Estimator
      * @throws \Rubix\ML\Exceptions\InvalidArgumentException
      */
     public function __construct(Labeled $dataset, int $minClusterSize = 5, int $sampleSize = 5, array $oldCoreDistances = [], ?Distance $kernel = null, bool $useTrueMst = true)
-    { 
+    {
         if ($minClusterSize < 2) {
             throw new InvalidArgumentException('Minimum cluster size must be'
                 . " greater than 1, $minClusterSize.");
@@ -169,9 +167,7 @@ class HDBSCAN //implements Estimator
         }
 
         $kernel = $kernel ?? new SquaredDistance();
-
         $this->minClusterSize = $minClusterSize;
-
         $this->mstSolver = new MstSolver($dataset, 20, $sampleSize, $kernel, $oldCoreDistances, $useTrueMst);
     }
 
@@ -223,7 +219,7 @@ class HDBSCAN //implements Estimator
     {
         // Boruvka algorithm for MST generation        
         $edges = $this->mstSolver->getMst();
-        
+
         // Boruvka complete, $edges now contains our mutual reachability distance MST
         if ($this->mstSolver->kernel() instanceof SquaredDistance) {
             foreach ($edges as &$edge) {
@@ -300,7 +296,7 @@ class MstSolver
 
         foreach ($querySamples as $queryKey => $querySample) {
             $queryLabel = $queryLabels[$queryKey];
-            $querySetId = $vertexToSetId[$queryLabel];            
+            $querySetId = $vertexToSetId[$queryLabel];
 
             if ($this->tree->getCoreDistance($queryLabel) > ($newEdges[$querySetId]["distance"] ?? INF)) {
                 // The core distance of the current vertex is greater than the current best edge
@@ -310,7 +306,7 @@ class MstSolver
 
             foreach ($referenceSamples as $referenceKey => $referenceSample) {
                 $referenceLabel = $referenceLabels[$referenceKey];
-                $referenceSetId = $vertexToSetId[$referenceLabel];                
+                $referenceSetId = $vertexToSetId[$referenceLabel];
 
                 if ($querySetId === $referenceSetId) {
                     continue;
@@ -363,7 +359,6 @@ class MstSolver
             } else {
                 $currentBound = $queryNode->getLongestDistance();
             }
-
             // If node distance is greater than the longest possible edge in this node,
             // prune this reference node
             if ($nodeDistance > $currentBound) {
@@ -376,51 +371,48 @@ class MstSolver
             return;
         }
 
-        if($queryNode instanceof DualTreeClique || (($referenceNode->height() > $queryNode->radius() && !($referenceNode instanceof DualTreeClique)))) {
-
-            $referenceA = $referenceNode->left();
-            $referenceB = $referenceNode->right();
-
-            $distA = $this->tree->nodeDistance($queryNode, $referenceA);
-            $distB = $this->tree->nodeDistance($queryNode, $referenceB);
-
-            if ($distB < $distA) {
-                [$referenceA, $referenceB] = [$referenceB, $referenceA];
+        if ($queryNode instanceof DualTreeClique) {
+            foreach ($referenceNode->children() as $child) {
+                $this->findSetNeighbors($queryNode, $child, $newEdges, $vertexToSetId);
             }
-
-            $this->findSetNeighbors($queryNode, $referenceA, $newEdges, $vertexToSetId);
-            $this->findSetNeighbors($queryNode, $referenceB, $newEdges, $vertexToSetId);
-
             return;
         }
 
-        $queryA = $queryNode->left();
-        $queryB = $queryNode->right();
+        if ($referenceNode instanceof DualTreeClique) {
+            $longestDistance = 0.0;
 
-        $distA = $this->tree->nodeDistance($referenceNode, $queryA);
-        $distB = $this->tree->nodeDistance($referenceNode, $queryB);
+            $queryLeft = $queryNode->left();
+            $queryRight = $queryNode->right();
 
-        if ($distB < $distA) {
-            [$queryA, $queryB] = [$queryB, $queryA];
+            $this->findSetNeighbors($queryLeft, $referenceNode, $newEdges, $vertexToSetId);
+            $this->findSetNeighbors($queryRight, $referenceNode, $newEdges, $vertexToSetId);
+
+        } else { // if ($queryNode instanceof DualTreeBall && $referenceNode instanceof DualTreeBall)            
+            $queryLeft = $queryNode->left();
+            $queryRight = $queryNode->right();
+            $referenceLeft = $referenceNode->left();
+            $referenceRight = $referenceNode->right();
+
+            $this->findSetNeighbors($queryLeft, $referenceLeft, $newEdges, $vertexToSetId);
+            $this->findSetNeighbors($queryRight, $referenceRight, $newEdges, $vertexToSetId);
+            $this->findSetNeighbors($queryLeft, $referenceRight, $newEdges, $vertexToSetId);
+            $this->findSetNeighbors($queryRight, $referenceLeft, $newEdges, $vertexToSetId);
         }
 
-        $this->findSetNeighbors($queryA, $referenceNode, $newEdges, $vertexToSetId);
-        $this->findSetNeighbors($queryB, $referenceNode, $newEdges, $vertexToSetId);
+        $longestLeft = $queryLeft->getLongestDistance();
+        $longestRight = $queryRight->getLongestDistance();
 
-        $longestA = $queryA->getLongestDistance();
-        $longestB = $queryB->getLongestDistance();
-
-        // TODO: min($longestA, $longestB) + 2 * ($queryNode->radius()) <--- Can be made tighter?
+        // TODO: min($longestLeft, $longestRight) + 2 * ($queryNode->radius()) <--- Can be made tighter?
         if ($this->kernel instanceof SquaredDistance) {
-            $longestDistance = max($longestA, $longestB);
-            $longestA = (sqrt($longestA) + 2 * (sqrt($queryNode->radius()) - sqrt($queryA->radius()))) ** 2;
-            $longestB = (sqrt($longestB) + 2 * (sqrt($queryNode->radius()) - sqrt($queryB->radius()))) ** 2;
-            $longestDistance = min($longestDistance, min($longestA, $longestB), (sqrt(min($longestA, $longestB)) + 2 * (sqrt($queryNode->radius()))) ** 2);
+            $longestDistance = max($longestLeft, $longestRight);
+            $longestLeft = (sqrt($longestLeft) + 2 * (sqrt($queryNode->radius()) - sqrt($queryLeft->radius()))) ** 2;
+            $longestRight = (sqrt($longestRight) + 2 * (sqrt($queryNode->radius()) - sqrt($queryRight->radius()))) ** 2;
+            $longestDistance = min($longestDistance, min($longestLeft, $longestRight), (sqrt(min($longestLeft, $longestRight)) + 2 * (sqrt($queryNode->radius()))) ** 2);
         } else {
-            $longestDistance = max($longestA, $longestB);
-            $longestA = $longestA + 2 * ($queryNode->radius() - $queryA->radius());
-            $longestB = $longestB + 2 * ($queryNode->radius() - $queryB->radius());
-            $longestDistance = min($longestDistance, min($longestA, $longestB), min($longestA, $longestB) + 2 * ($queryNode->radius()));
+            $longestDistance = max($longestLeft, $longestRight);
+            $longestLeft = $longestLeft + 2 * ($queryNode->radius() - $queryLeft->radius());
+            $longestRight = $longestRight + 2 * ($queryNode->radius() - $queryRight->radius());
+            $longestDistance = min($longestDistance, min($longestLeft, $longestRight), min($longestLeft, $longestRight) + 2 * ($queryNode->radius()));
         }
 
         $queryNode->setLongestDistance($longestDistance);
@@ -435,13 +427,12 @@ class MstSolver
         // MST generation using dual-tree boruvka algorithm
 
         $treeRoot = $this->tree->getRoot();
-        //$referenceTreeRoot = $this->tree->getRoot();
+
         $treeRoot->resetFullyConnectedStatus();
 
         $allLabels = $this->tree->getDataset()->labels();
 
         $vertexToSetId = array_combine($allLabels, range(0, count($allLabels) - 1));
-        //$labelToDatasetOffset = array_combine($this->dataset->labels(),array_keys($this->dataset->labels()));
 
         $vertexSets = [];
         foreach ($vertexToSetId as $vertex => $setId) {
@@ -557,14 +548,9 @@ class MrdBallTree extends BallTree
                 . " to form a leaf node, $maxLeafSize given.");
         }
 
-        /*if ($coreDistSampleSize < 2) {
-        throw new InvalidArgumentException('At least two samples are required'
-        . " to calculate core distance, $coreDistSampleSize given.");
-        }*/
-
         $this->maxLeafSize = $maxLeafSize;
         $this->sampleSize = $sampleSize;
-        //$this->coreDistSampleSize = $coreDistSampleSize;
+
         $this->kernel = $kernel ?? new SquaredDistance();
         $this->radiusDiamFactor = $this->kernel instanceof SquaredDistance ? 4 : 2;
 
@@ -579,7 +565,6 @@ class MrdBallTree extends BallTree
 
     public function nodeDistance($queryNode, $referenceNode): float
     {
-
         // Use cache to accelerate repeated queries
         if ($this->nodeIds->contains($queryNode)) {
             $queryNodeId = $this->nodeIds[$queryNode];
@@ -651,7 +636,6 @@ class MrdBallTree extends BallTree
 
     private function updateNearestNeighbors($queryNode, $referenceNode, $k, $maxRange, &$bestDistances): void
     {
-
         $querySamples = $queryNode->dataset()->samples();
         $queryLabels = $queryNode->dataset()->labels();
         $referenceSamples = $referenceNode->dataset()->samples();
@@ -703,7 +687,6 @@ class MrdBallTree extends BallTree
 
     private function findNearestNeighbors($queryNode, $referenceNode, $k, $maxRange, &$bestDistances): void
     {
-
         $nodeDistance = $this->nodeDistance($queryNode, $referenceNode);
 
         if ($nodeDistance > 0.0) {
@@ -790,7 +773,6 @@ class MrdBallTree extends BallTree
         $treeRoot->resetLongestEdge();
 
         $this->findNearestNeighbors($treeRoot, $treeRoot, $k, $maxRange, $bestDistances);
-
     }
 
     /**
@@ -1048,7 +1030,6 @@ class MrdBallTree extends BallTree
                 $neighborLabels = $dataset->labels();
 
                 foreach ($dataset->samples() as $i => $neighbor) {
-
                     if ($neighborLabels[$i] === $sampleLabel) {
                         continue;
                     }
@@ -1152,7 +1133,6 @@ class MrdBallTree extends BallTree
             }
         }
         array_multisort($distances, $labels);
-
         return [$labels, $distances];
     }
 
@@ -1245,7 +1225,6 @@ class DualTreeBall extends Ball
         if (!$this->fullyConnected) {
             return null;
         }
-
         return $this->setId;
     }
 
@@ -1422,9 +1401,7 @@ class DualTreeClique extends Clique
         foreach ($dataset->samples() as $sample) {
             $distances[] = $kernel->compute($sample, $center);
         }
-
         $radius = max($distances) ?: 0.0;
-
         return new self($dataset, $center, $radius);
     }
 }
@@ -1443,8 +1420,8 @@ class MstClusterer
     private array $coreEdges;
     private bool $isRoot;
     private array $mapVerticesToEdges;
-
     private float $minClusterSeparation;
+
     public function __construct(array $edges, ?array $mapVerticesToEdges, int $minimumClusterSize, ?float $startingLambda = null, float $minClusterSeparation = 0.1)
     {
         //Ascending sort of edges while perserving original keys.
@@ -1492,16 +1469,13 @@ class MstClusterer
 
     public function processCluster(): array
     {
-
         $currentLambda = $lastLambda = $this->startingLambda;
         $edgeLength = INF;
 
         while (true) {
-
             $edgeCount = count($this->remainingEdges);
 
             if ($edgeCount < ($this->minimumClusterSize - 1)) {
-
                 $this->finalLambda = $currentLambda;
                 $this->coreEdges = $this->remainingEdges;
 
@@ -1541,7 +1515,6 @@ class MstClusterer
                         $this->remainingEdges = $childClusterEdges2;
                         $this->mapVerticesToEdges = $childClusterVerticesToEdges2;
                     }
-
                     continue;
                 }
 
@@ -1579,17 +1552,14 @@ class MstClusterer
         $vertexStack = [$vertexId];
 
         while (!empty($vertexStack)) {
-
             $currentVertex = array_pop($vertexStack);
             $verticesToPrune[] = $currentVertex;
-
 
             if (count($verticesToPrune) >= $this->minimumClusterSize) {
                 return false;
             }
 
             foreach (array_keys($this->mapVerticesToEdges[$currentVertex]) as $edgeKey) {
-
                 if (isset($edgeIndicesToPrune[$edgeKey])) {
                     continue;
                 }
@@ -1601,7 +1571,6 @@ class MstClusterer
                     $vertexStack[] = $this->remainingEdges[$edgeKey]["vertexFrom"];
                     $edgeIndicesToPrune[$edgeKey] = true;
                 }
-
             }
         }
 
@@ -1615,7 +1584,6 @@ class MstClusterer
             unset($this->mapVerticesToEdges[$vertexLabel]);
         }
 
-
         return true;
     }
 
@@ -1625,7 +1593,6 @@ class MstClusterer
         $vertexStack = [$vertexId];
         $edgeIndicesInCluster = [];
         $verticesInCluster = [];
-
 
         while (!empty($vertexStack)) {
 
