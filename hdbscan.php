@@ -145,7 +145,7 @@ class HDBSCAN //implements Estimator
      */
     protected \Rubix\ML\Datasets\Labeled $dataset;
 
-    private Logger $logger; // DEBUG
+
 
     /**
      * @param Labeled $dataset
@@ -156,8 +156,8 @@ class HDBSCAN //implements Estimator
      * @param Distance $kernel
      * @throws \Rubix\ML\Exceptions\InvalidArgumentException
      */
-    public function __construct(Labeled $dataset, int $minClusterSize = 5, int $sampleSize = 5, float $maxEdgeLength = INF, array $oldCoreDistances = [], ?Distance $kernel = null, bool $useTrueMst = true, ?Logger $logger = null)
-    { // DEBUG: remove logger before deploying this class
+    public function __construct(Labeled $dataset, int $minClusterSize = 5, int $sampleSize = 5, array $oldCoreDistances = [], ?Distance $kernel = null, bool $useTrueMst = true)
+    { 
         if ($minClusterSize < 2) {
             throw new InvalidArgumentException('Minimum cluster size must be'
                 . " greater than 1, $minClusterSize.");
@@ -172,11 +172,7 @@ class HDBSCAN //implements Estimator
 
         $this->minClusterSize = $minClusterSize;
 
-        $this->maxEdgeLength = $maxEdgeLength;
         $this->mstSolver = new MstSolver($dataset, 20, $sampleSize, $kernel, $oldCoreDistances, $useTrueMst);
-
-        $this->logger = $logger; // DEBUG
-
     }
 
     public function getCoreNeighborDistances(): array
@@ -225,34 +221,10 @@ class HDBSCAN //implements Estimator
      */
     public function predict(): array
     {
-
-
-        /*
-        $this->logger->debug('ClusterDebug: Starting dual tree functionality test.'); 
-        $samples = [[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,0.5],[0.55,0.55],[0.45,0.45],[2.0,2.0],[3.0,2.0],[3.0,3.0],[2.0,3.0],[2.5,2.5],[3.0,-4.0]];
-        $labels = [0, 1, 2, 3, 4, 5, 6, 7, 20, 21, 22, 23, 24];
-        foreach ($samples as $sample) {
-        $samples[] = [$sample[0] + 10, $sample[1] + 10];
-        }
-        
-        $fullDataset = new Labeled($samples,range(0,count($samples)-1));
-        //$aDataset = new Labeled($aSamples,$aLabels,false);
-        //$bDataset = new Labeled($bSamples,$bLabels,false);        
-        $mstSolver = new MstSolver($fullDataset, 2, 3, new Euclidean());
-        $edges = $mstSolver->getMst();
-        $this->logger->debug('ClusterDebug: Dual tree functionality test ');
-        $edges = array_values($edges);
-        foreach($edges as $key => $edge) {
-        $this->logger->debug('ClusterDebug: Edge: '.$key.', labels: '.$edge['vertexFrom'].' : '.$edge['vertexTo'].', distance: '.$edge['distance']);    
-        }*/
-
         // Boruvka algorithm for MST generation        
-        $this->logger->debug('ClusterDebug: Starting dt Boruvka.');
         $edges = $this->mstSolver->getMst();
-        $this->logger->debug('ClusterDebug: Mst resolved.');
-
+        
         // Boruvka complete, $edges now contains our mutual reachability distance MST
-
         if ($this->mstSolver->kernel() instanceof SquaredDistance) {
             foreach ($edges as &$edge) {
                 $edge["distance"] = sqrt($edge["distance"]);
@@ -507,8 +479,6 @@ class MstSolver
         // Main dual tree Boruvka loop:
 
         while (true) {
-            //$this->logger->debug('ClusterDebug: Processing Boruvka iteration, remaining vertex sets: ' . count($vertexSets)); // DEBUG
-
             //Add new edges
             //Update vertex to set/set to vertex mappings
             foreach ($newEdges as $connectingEdge) {
