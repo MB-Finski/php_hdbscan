@@ -647,6 +647,8 @@ class MrdBallTree extends BallTree
         foreach ($querySamples as $queryKey => $querySample) {
             $queryLabel = $queryLabels[$queryKey];
 
+            $bestDistance = $bestDistances[$queryLabel];
+
             foreach ($referenceSamples as $referenceKey => $referenceSample) {
                 $referenceLabel = $referenceLabels[$referenceKey];
 
@@ -657,24 +659,27 @@ class MrdBallTree extends BallTree
                 // Calculate native distance
                 $distance = $this->cachedComputeNative($queryLabel, $querySample, $referenceLabel, $referenceSample);
 
-                if ($distance < $bestDistances[$queryLabel]) {
-                    $this->coreNeighborDistances[$queryLabel][$referenceLabel] = $distance;
+                if ($distance < $bestDistance) {
+                    //Minimize array queries within these loops:
+                    $coreNeighborDistances = & $this->coreNeighborDistances[$queryLabel];
+                    $coreNeighborDistances[$referenceLabel] = $distance;                    
 
-                    if (count($this->coreNeighborDistances[$queryLabel]) >= $k) {
-                        asort($this->coreNeighborDistances[$queryLabel]);
-                        $this->coreNeighborDistances[$queryLabel] = array_slice($this->coreNeighborDistances[$queryLabel], 0, $k, true);
-                        $bestDistances[$queryLabel] = min(end($this->coreNeighborDistances[$queryLabel]), $maxRange);
+                    if (count($coreNeighborDistances) >= $k) {
+                        asort($coreNeighborDistances);
+                        $coreNeighborDistances = array_slice($coreNeighborDistances, 0, $k, true);
+                        $bestDistance= min(end($coreNeighborDistances), $maxRange);
                     }
                 }
             }
 
-            if ($bestDistances[$queryLabel] > $longestDistance) {
-                $longestDistance = $bestDistances[$queryLabel];
+            if ($bestDistance > $longestDistance) {
+                $longestDistance = $bestDistance;
             }
 
-            if ($bestDistances[$queryLabel] < $shortestDistance) {
-                $shortestDistance = $bestDistances[$queryLabel];
+            if ($bestDistance < $shortestDistance) {
+                $shortestDistance = $bestDistance;
             }
+            $bestDistances[$queryLabel] = $bestDistance;
         }
 
         if ($this->kernel instanceof SquaredDistance) {
@@ -731,9 +736,9 @@ class MrdBallTree extends BallTree
 
             // TODO: traverse closest neighbor nodes first
             $this->findNearestNeighbors($queryLeft, $referenceLeft, $k, $maxRange, $bestDistances);
-            $this->findNearestNeighbors($queryRight, $referenceRight, $k, $maxRange, $bestDistances);
             $this->findNearestNeighbors($queryLeft, $referenceRight, $k, $maxRange, $bestDistances);
             $this->findNearestNeighbors($queryRight, $referenceLeft, $k, $maxRange, $bestDistances);
+            $this->findNearestNeighbors($queryRight, $referenceRight, $k, $maxRange, $bestDistances);
         }
 
         $longestLeft = $queryLeft->getLongestDistance();
@@ -1196,7 +1201,9 @@ class DualTreeBall extends Ball
 
     public function setLongestDistance($longestDistance): void
     {
-        $this->longestDistanceInNode = $longestDistance;
+        if($longestDistance < $this->longestDistanceInNode) {
+            $this->longestDistanceInNode = $longestDistance;
+        }        
     }
 
     public function getLongestDistance(): float
@@ -1479,6 +1486,10 @@ class MstClusterer
                     $edge['finalLambda'] = $currentLambda;
                 }
                 unset($edge);
+
+                foreach (array_keys($this->remainingEdges) as $edgeKey) {
+                    $this->edges[$edgeKey]['finalLambda'] = $currentLambda;
+                }
                 
                 return [$this];
             }
@@ -1504,6 +1515,8 @@ class MstClusterer
 
             $this->clusterWeight += ($currentLambda - $lastLambda) * $edgeCount;
             $lastLambda = $currentLambda;
+
+            $this->edges[$currentLongestEdgeKey]["finalLambda"] = $currentLambda;
 
             if (!$this->pruneFromCluster($vertexConnectedTo, $currentLambda) && !$this->pruneFromCluster($vertexConnectedFrom, $currentLambda)) {
 
@@ -1654,6 +1667,14 @@ class MstClusterer
         }
 
         return $vertices;
+    }
+
+    public function getCoreEdges(): array {
+        return $this->coreEdges;
+    }
+
+    public function getClusterEdges(): array {
+        return $this->edges;
     }
 
     public function getCoreVertices(): array {
